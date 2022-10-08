@@ -4,7 +4,7 @@ use bevy::{
     ui::{FocusPolicy, Interaction},
 };
 use bevy_mod_picking::*;
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 
 pub struct BoardPlugin;
 
@@ -20,14 +20,16 @@ impl Plugin for BoardPlugin {
 
 #[derive(Debug)]
 pub struct Board {
-    pub teritories: Vec<Teritory>,
+    turn: usize,
+    player_order: Vec<usize>,
+    teritories: Vec<Teritory>,
 }
 
 #[derive(Debug)]
 pub struct Teritory {
-    pub owner: Option<usize>,
-    pub dice: u32,
-    pub connections: Vec<usize>,
+    owner: usize,
+    dice: u32,
+    connections: Vec<usize>,
 }
 
 impl Board {
@@ -41,13 +43,97 @@ impl Board {
                 connections.push(rng.gen_range(0..16));
             }
             teritories.push(Teritory {
-                owner: Some(rng.gen_range(0..8)),
+                owner: rng.gen_range(0..8),
                 dice: rng.gen_range(1..6),
                 connections,
             });
         }
 
-        Self { teritories }
+        let mut player_order = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        player_order.shuffle(&mut rng);
+
+        Self {
+            turn: 0,
+            player_order,
+            teritories,
+        }
+    }
+
+    pub fn make_move(&mut self, first: usize, second: usize) {
+        let mut rng = rand::thread_rng();
+
+        // roll the dice!
+        let mut first_total = 0;
+        for _ in 0..self.teritories[first].dice {
+            first_total += rng.gen_range(1..6);
+        }
+
+        let mut second_total = 0;
+        for _ in 0..self.teritories[second].dice {
+            second_total += rng.gen_range(1..6);
+        }
+
+        if first_total > second_total {
+            println!("Attack!! {} vs {}: win!", first_total, second_total);
+            self.teritories[second].owner = self.teritories[first].owner;
+            self.teritories[second].dice = self.teritories[first].dice - 1;
+            self.teritories[first].dice = 1;
+        } else {
+            println!("Attack!! {} vs {}: loss...", first_total, second_total);
+            self.teritories[first].dice = 1;
+        }
+    }
+
+    pub fn available_moves(&self, first: usize) -> Vec<usize> {
+        let mut moves = Vec::new();
+        if self.teritories[first].owner == self.player_order[self.turn]
+            && self.teritories[first].dice > 0
+        {
+            for second in self.teritories[first].connections.iter() {
+                if self.teritories[first].owner != self.teritories[*second].owner {
+                    moves.push(*second);
+                }
+            }
+        }
+        moves
+    }
+
+    pub fn count_teritories(&self) -> Vec<u32> {
+        let mut income = vec![0; 8];
+        for teritory in self.teritories.iter() {
+            income[teritory.owner] += 1;
+        }
+        income
+    }
+
+    pub fn finish_turn(&mut self) {
+        let territory_count = self.count_teritories();
+        for i in 0..territory_count.len() {
+            if territory_count[i] == 0 {
+                for j in 0..self.player_order.len() {
+                    if self.player_order[j] == i {
+                        println!("Player {} has lost!", i);
+                        self.player_order.remove(j);
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.turn += 1;
+        if self.turn >= self.player_order.len() {
+            self.turn = 0;
+        }
+
+        println!("Turn: {}, {:?}", self.turn, self.count_teritories());
+    }
+
+    pub fn owner(&self, teritory: usize) -> usize {
+        self.teritories[teritory].owner
+    }
+
+    pub fn current_player(&self) -> usize {
+        self.player_order[self.turn]
     }
 }
 
@@ -85,12 +171,12 @@ fn setup(
 ) {
     let mut rng = rand::thread_rng();
     let mut positions = vec![Vec2::new(0.0, 0.0); 16];
-    for i in 0..16 {
+    for i in 0..board.teritories.len() {
         positions[i] = Vec2::new(rng.gen_range(-300.0..300.0), rng.gen_range(-300.0..300.0));
     }
-    for i in 0..16 {
+    for i in 0..board.teritories.len() {
         board.teritories[i].connections = Vec::new();
-        for j in 0..16 {
+        for j in 0..board.teritories.len() {
             if positions[i].distance(positions[j]) < 200.0 {
                 board.teritories[i].connections.push(j);
             }
@@ -124,7 +210,7 @@ fn setup(
     }
 
     for i in 0..board.teritories.len() {
-        let owner = board.teritories[i].owner.unwrap();
+        let owner = board.teritories[i].owner;
         commands
             .spawn_bundle(MaterialMesh2dBundle {
                 transform: Transform::default()
@@ -151,7 +237,7 @@ fn setup(
     let square_mesh = meshes.add(Mesh::from(shape::Quad::default()));
     let material_handle = materials.add(ColorMaterial::from(Color::WHITE));
 
-    let arrow_mesh_handle = asset_server.load("arrow_head.obj");
+    // let arrow_mesh_handle = asset_server.load("arrow_head.obj");
 
     for i in 0..board.teritories.len() {
         for j in 0..board.teritories[i].connections.len() {
@@ -174,19 +260,19 @@ fn setup(
                 .insert(Arrow);
 
             // spawn arrow on end of connection
-            let transform = Transform::default()
-                .with_translation(pos)
-                .looking_at(pos - Vec3::Z, p2.extend(0.0) - p1.extend(0.0))
-                .with_scale(Vec3::splat(5.0));
+            // let transform = Transform::default()
+            //     .with_translation(pos)
+            //     .looking_at(pos - Vec3::Z, p2.extend(0.0) - p1.extend(0.0))
+            //     .with_scale(Vec3::splat(5.0));
 
-            commands
-                .spawn_bundle(MaterialMesh2dBundle {
-                    transform,
-                    mesh: arrow_mesh_handle.clone().into(),
-                    material: material_handle.clone(),
-                    ..default()
-                })
-                .insert(Arrow);
+            // commands
+            //     .spawn_bundle(MaterialMesh2dBundle {
+            //         transform,
+            //         mesh: arrow_mesh_handle.clone().into(),
+            //         material: material_handle.clone(),
+            //         ..default()
+            //     })
+            //     .insert(Arrow);
         }
     }
 
@@ -218,10 +304,10 @@ fn update_board(
             }
         } else {
             if node.hovered {
-                let owner = board.teritories[node.index].owner.unwrap();
+                let owner = board.teritories[node.index].owner;
                 *material = board_render_data.materials[owner].1.clone();
             } else {
-                let owner = board.teritories[node.index].owner.unwrap();
+                let owner = board.teritories[node.index].owner;
                 *material = board_render_data.materials[owner].0.clone();
             }
         }
@@ -234,7 +320,7 @@ fn update_board(
     for i in 0..board.teritories.len() {
         let dice_count = board.teritories[i].dice;
         let pos = board_render_data.positions[i];
-        let owner = board.teritories[i].owner.unwrap();
+        let owner = board.teritories[i].owner;
 
         for j in 0..dice_count {
             let transform = Transform::default()
