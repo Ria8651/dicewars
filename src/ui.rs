@@ -1,6 +1,10 @@
-use super::{board::Board, GameStateEvent};
+use super::{
+    board::{Board, BoardRenderData},
+    GameStateEvent,
+};
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContext, EguiPlugin};
+use egui::{Color32, RichText};
 
 pub struct UiPlugin;
 
@@ -12,8 +16,9 @@ impl Plugin for UiPlugin {
 
 fn ui_system(
     mut egui_context: ResMut<EguiContext>,
-    // board: Res<Board>,
+    board: Res<Board>,
     mut game_state_events: EventWriter<GameStateEvent>,
+    board_render_data: Res<BoardRenderData>,
 ) {
     egui::Window::new("Game menu").show(egui_context.ctx_mut(), |ui| {
         // if ui.button("Spread Dice").clicked() {
@@ -24,7 +29,7 @@ fn ui_system(
         //                 break;
         //             }
         //             let connection = board.teritories[i].connections[j];
-        //             board.teritories[connection].dice += 1;
+        //             board.teritories[connection].dice += 1;j
         //             dice -= 1;
         //         }
         //         board.teritories[i].dice = dice;
@@ -34,5 +39,24 @@ fn ui_system(
         if ui.button("Finish turn").clicked() {
             game_state_events.send(GameStateEvent::FinishTurn);
         }
+
+        ui.horizontal_wrapped(|ui| {
+            let (turn, scores) = board.scores();
+            for i in 0..scores.len() {
+                let colour = board_render_data.colours[scores[i].0];
+                ui.label(
+                    RichText::new(if i == turn {
+                        format!("({:?})", scores[i].1)
+                    } else {
+                        format!("{:?}", scores[i].1)
+                    })
+                    .color(Color32::from_rgb(
+                        (colour.r() * 255.0) as u8,
+                        (colour.g() * 255.0) as u8,
+                        (colour.b() * 255.0) as u8,
+                    )),
+                );
+            }
+        });
     });
 }
