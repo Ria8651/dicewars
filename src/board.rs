@@ -1,3 +1,4 @@
+use super::hex::Hex;
 use bevy::{
     prelude::*,
     sprite::MaterialMesh2dBundle,
@@ -5,13 +6,14 @@ use bevy::{
 };
 use bevy_mod_picking::*;
 use rand::{seq::SliceRandom, Rng};
+use std::collections::HashMap;
 
 pub struct BoardPlugin;
 
 impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(bevy_obj::ObjPlugin)
-            .insert_resource(Board::generate())
+            // .insert_resource(Board::generate())
             .add_startup_system(setup)
             .add_stage_after(CoreStage::Update, "Post", SystemStage::parallel())
             .add_system_to_stage("Post", update_board);
@@ -26,37 +28,58 @@ pub struct Board {
 }
 
 #[derive(Debug)]
-pub struct Territory {
+struct Territory {
     owner: usize,
     dice: u32,
     connections: Vec<usize>,
 }
 
 impl Board {
-    pub fn generate() -> Self {
-        let mut territories = Vec::new();
+    pub fn generate() -> (Vec<(Vec2, Tile)>, Self) {
         let mut rng = rand::thread_rng();
+        let mut map = HashMap::new();
+        let mut territories = Vec::new();
 
-        for _ in 0..16 {
-            let mut connections = Vec::new();
-            for _ in 0..1 {
-                connections.push(rng.gen_range(0..16));
-            }
+        for i in 0..16 {
             territories.push(Territory {
-                owner: rng.gen_range(0..8),
-                dice: rng.gen_range(1..6),
-                connections,
+                owner: rng.gen_range(0..4),
+                dice: rng.gen_range(1..7),
+                connections: Vec::new(),
             });
+
+            let q = rng.gen_range(-10..10);
+            let r = rng.gen_range(-10..10);
+            map.insert(Hex::new(q, r, -q - r), i);
         }
 
-        let mut player_order = vec![0, 1, 2, 3, 4, 5, 6, 7];
-        player_order.shuffle(&mut rng);
+        for _ in 0..5 {
+            for (hex, territory) in map.clone().iter() {
+                for direction in Hex::orthogonal() {
+                    let neighbor = *hex + direction;
+                    if !map.contains_key(&neighbor) {
+                        map.insert(neighbor, *territory);
+                    }
+                }
+            }
+        }
 
-        Self {
+        let mut tiles = Vec::new();
+        for (hex, territory_index) in map.iter() {
+            tiles.push((
+                hex.to_grid(),
+                Tile {
+                    index: *territory_index,
+                },
+            ));
+        }
+
+        let board = Self {
             turn: 0,
-            player_order,
+            player_order: vec![0, 1, 2, 3],
             territories,
-        }
+        };
+
+        (tiles, board)
     }
 
     pub fn make_move(&mut self, first: usize, second: usize) {
@@ -165,22 +188,19 @@ impl Board {
 }
 
 #[derive(Component)]
-struct Arrow;
-
-#[derive(Component)]
-pub struct Node {
+pub struct Tile {
     pub index: usize,
-    pub hovered: bool,
-    pub selected: bool,
 }
 
 #[derive(Component)]
 struct Dice;
 
 pub struct BoardRenderData {
-    square_mesh: Handle<Mesh>,
     positions: Vec<Vec2>,
     pub colours: Vec<Color>,
+    pub selected: Option<usize>,
+    pub hovered: Option<usize>,
+    meshes: (Handle<Mesh>, Handle<Mesh>),
     materials: Vec<(
         Handle<ColorMaterial>,
         Handle<ColorMaterial>,
@@ -192,29 +212,25 @@ pub struct BoardRenderData {
 
 fn setup(
     mut commands: Commands,
-    mut board: ResMut<Board>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut mesh_assets: ResMut<Assets<Mesh>>,
+    mut material_assets: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    let mut rng = rand::thread_rng();
-    let mut positions = vec![Vec2::new(0.0, 0.0); 16];
-    for i in 0..board.territories.len() {
-        positions[i] = Vec2::new(rng.gen_range(-300.0..300.0), rng.gen_range(-300.0..300.0));
-    }
-    for i in 0..board.territories.len() {
-        board.territories[i].connections = Vec::new();
-        for j in 0..board.territories.len() {
-            if positions[i].distance(positions[j]) < 200.0 {
-                board.territories[i].connections.push(j);
-            }
-        }
-    }
+    // let mut rng = rand::thread_rng();
+    // let mut positions = vec![Vec2::new(0.0, 0.0); 16];
+    // for i in 0..board.territories.len() {
+    //     positions[i] = Vec2::new(rng.gen_range(-300.0..300.0), rng.gen_range(-300.0..300.0));
+    // }
+    // for i in 0..board.territories.len() {
+    //     board.territories[i].connections = Vec::new();
+    //     for j in 0..board.territories.len() {
+    //         if positions[i].distance(positions[j]) < 200.0 {
+    //             board.territories[i].connections.push(j);
+    //         }
+    //     }
+    // }
 
-    // spawn in nodes
-    let mesh_handle = asset_server.load("hexagon.obj");
-
-    let dice_texture = asset_server.load("dice.png");
+    // spawn in tiles
     let colours = vec![
         Color::rgb_u8(0, 147, 2),
         Color::rgb_u8(255, 255, 3),
@@ -225,35 +241,66 @@ fn setup(
         Color::rgb_u8(255, 88, 89),
         Color::rgb_u8(178, 255, 254),
     ];
-    let mut node_materials = Vec::new();
+
+    let meshes = (
+        asset_server.load("hexagon.obj"),
+        mesh_assets.add(Mesh::from(shape::Quad::default())),
+    );
+
+    let dice_texture = asset_server.load("dice.png");
+    let mut materials = Vec::new();
     for i in 0..8 {
-        node_materials.push((
-            materials.add(ColorMaterial::from(colours[i])),
-            materials.add(ColorMaterial::from(colours[i] * 0.8)),
-            materials.add(ColorMaterial {
+        materials.push((
+            material_assets.add(ColorMaterial::from(colours[i])),
+            material_assets.add(ColorMaterial::from(colours[i] * 0.8)),
+            material_assets.add(ColorMaterial {
                 color: colours[i],
                 texture: Some(dice_texture.clone()),
             }),
         ));
     }
 
-    for i in 0..board.territories.len() {
-        let owner = board.territories[i].owner;
+    // for i in 0..board.territories.len() {
+    //     let owner = board.territories[i].owner;
+    //     commands
+    //         .spawn_bundle(MaterialMesh2dBundle {
+    //             transform: Transform::default()
+    //                 .with_translation(positions[i].extend(0.5))
+    //                 .with_scale(Vec3::new(15.0, 13.0, 1.0)),
+    //             mesh: meshes.0.clone().into(),
+    //             material: materials[owner].0.clone(),
+    //             ..default()
+    //         })
+    //         .insert(Tile {
+    //             index: i,
+    //             selected: false,
+    //             hovered: false,
+    //         })
+    //         .insert_bundle((
+    //             PickableMesh::default(),
+    //             Hover::default(),
+    //             FocusPolicy::Block,
+    //             Interaction::None,
+    //         ));
+    // }
+
+    let (board_data, board) = Board::generate();
+    let mut positions = Vec::new();
+    for (pos, tile) in board_data {
+        positions.push(pos);
+
+        let owner = board.territories[tile.index].owner;
+        let transform =
+            Transform::from_translation(pos.extend(0.0) * 10.0).with_scale(Vec3::splat(10.0));
         commands
             .spawn_bundle(MaterialMesh2dBundle {
-                transform: Transform::default()
-                    .with_translation(positions[i].extend(0.5))
-                    .with_scale(Vec3::new(15.0, 13.0, 1.0)),
-                mesh: mesh_handle.clone().into(),
-                material: node_materials[owner].0.clone(),
+                transform,
+                mesh: meshes.0.clone().into(),
+                material: materials[owner].0.clone(),
                 ..default()
             })
-            .insert(Node {
-                index: i,
-                selected: false,
-                hovered: false,
-            })
             .insert_bundle((
+                tile,
                 PickableMesh::default(),
                 Hover::default(),
                 FocusPolicy::Block,
@@ -261,57 +308,18 @@ fn setup(
             ));
     }
 
-    // spawn in connections
-    let square_mesh = meshes.add(Mesh::from(shape::Quad::default()));
-    let material_handle = materials.add(ColorMaterial::from(Color::WHITE));
+    let selected_material = material_assets.add(ColorMaterial::from(Color::rgb_u8(240, 240, 240)));
+    let selected_material_hover =
+        material_assets.add(ColorMaterial::from(Color::rgb_u8(255, 255, 255)));
 
-    // let arrow_mesh_handle = asset_server.load("arrow_head.obj");
-
-    for i in 0..board.territories.len() {
-        for j in 0..board.territories[i].connections.len() {
-            let p1 = positions[i];
-            let p2 = positions[board.territories[i].connections[j]];
-            let pos = ((p1 + p2) / 2.0).extend(0.0);
-
-            let transform = Transform::default()
-                .with_translation(pos)
-                .looking_at(pos - Vec3::Z, pos - p1.extend(0.0))
-                .with_scale(Vec3::new(1.0, (p2 - p1).length(), 1.0));
-
-            commands
-                .spawn_bundle(MaterialMesh2dBundle {
-                    transform,
-                    mesh: square_mesh.clone().into(),
-                    material: material_handle.clone(),
-                    ..default()
-                })
-                .insert(Arrow);
-
-            // spawn arrow on end of connection
-            // let transform = Transform::default()
-            //     .with_translation(pos)
-            //     .looking_at(pos - Vec3::Z, p2.extend(0.0) - p1.extend(0.0))
-            //     .with_scale(Vec3::splat(5.0));
-
-            // commands
-            //     .spawn_bundle(MaterialMesh2dBundle {
-            //         transform,
-            //         mesh: arrow_mesh_handle.clone().into(),
-            //         material: material_handle.clone(),
-            //         ..default()
-            //     })
-            //     .insert(Arrow);
-        }
-    }
-
-    let selected_material = materials.add(ColorMaterial::from(Color::rgb_u8(240, 240, 240)));
-    let selected_material_hover = materials.add(ColorMaterial::from(Color::rgb_u8(255, 255, 255)));
-
+    commands.insert_resource(board);
     commands.insert_resource(BoardRenderData {
-        square_mesh,
         positions,
         colours,
-        materials: node_materials,
+        selected: None,
+        hovered: None,
+        meshes,
+        materials,
         selected_material,
         selected_material_hover,
     });
@@ -322,48 +330,48 @@ fn update_board(
     board: Res<Board>,
     board_render_data: Res<BoardRenderData>,
     dice_query: Query<Entity, With<Dice>>,
-    mut node_query: Query<(&Node, &mut Handle<ColorMaterial>)>,
+    mut tile_query: Query<(&Tile, &mut Handle<ColorMaterial>)>,
 ) {
-    for (node, mut material) in node_query.iter_mut() {
-        if node.selected {
-            if node.hovered {
+    for (tile, mut material) in tile_query.iter_mut() {
+        if tile.index == board_render_data.selected.unwrap_or(usize::MAX) {
+            if tile.index == board_render_data.hovered.unwrap_or(usize::MAX) {
                 *material = board_render_data.selected_material_hover.clone();
             } else {
                 *material = board_render_data.selected_material.clone();
             }
         } else {
-            if node.hovered {
-                let owner = board.territories[node.index].owner;
+            if tile.index == board_render_data.hovered.unwrap_or(usize::MAX) {
+                let owner = board.territories[tile.index].owner;
                 *material = board_render_data.materials[owner].1.clone();
             } else {
-                let owner = board.territories[node.index].owner;
+                let owner = board.territories[tile.index].owner;
                 *material = board_render_data.materials[owner].0.clone();
             }
         }
     }
 
-    for dice in dice_query.iter() {
-        commands.entity(dice).despawn();
-    }
+    // for dice in dice_query.iter() {
+    //     commands.entity(dice).despawn();
+    // }
 
-    for i in 0..board.territories.len() {
-        let dice_count = board.territories[i].dice;
-        let pos = board_render_data.positions[i];
-        let owner = board.territories[i].owner;
+    // for i in 0..board.territories.len() {
+    //     let dice_count = board.territories[i].dice;
+    //     let pos = board_render_data.positions[i];
+    //     let owner = board.territories[i].owner;
 
-        for j in 0..dice_count {
-            let transform = Transform::default()
-                .with_translation(pos.extend(j as f32 + 1.0) + Vec3::new(0.0, j as f32 * 15.0, 0.0))
-                .with_scale(Vec3::splat(45.0));
+    //     for j in 0..dice_count {
+    //         let transform = Transform::default()
+    //             .with_translation(pos.extend(j as f32 + 1.0) + Vec3::new(0.0, j as f32 * 15.0, 0.0))
+    //             .with_scale(Vec3::splat(45.0));
 
-            commands
-                .spawn_bundle(MaterialMesh2dBundle {
-                    transform,
-                    mesh: board_render_data.square_mesh.clone().into(),
-                    material: board_render_data.materials[owner].2.clone(),
-                    ..default()
-                })
-                .insert(Dice);
-        }
-    }
+    //         commands
+    //             .spawn_bundle(MaterialMesh2dBundle {
+    //                 transform,
+    //                 mesh: board_render_data.meshes.1.clone().into(),
+    //                 material: board_render_data.materials[owner].2.clone(),
+    //                 ..default()
+    //             })
+    //             .insert(Dice);
+    //     }
+    // }
 }

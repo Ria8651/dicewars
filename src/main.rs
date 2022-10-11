@@ -1,9 +1,10 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, ui::Interaction};
 use bevy_mod_picking::*;
-use board::{Board, Node};
+use board::{Board, BoardRenderData, Tile};
 
 mod board;
 mod fps_counter;
+mod hex;
 mod ui;
 
 fn main() {
@@ -27,7 +28,7 @@ fn setup(mut commands: Commands) {
 }
 
 struct SelectionState {
-    current: Option<(usize, Entity)>,
+    current: Option<usize>,
 }
 
 pub enum GameStateEvent {
@@ -36,79 +37,47 @@ pub enum GameStateEvent {
 
 fn process_game(
     mut events: EventReader<PickingEvent>,
-    mut node_entitys: Query<(&mut Node, Entity)>,
+    tile_entitys: Query<(&Tile, &Interaction, Entity)>,
     mut selection_state: ResMut<SelectionState>,
     mut board: ResMut<Board>,
     mut game_state_events: EventReader<GameStateEvent>,
+    mut board_render_data: ResMut<BoardRenderData>,
 ) {
-    let mut to_deselect = Vec::new();
-
     for event in events.iter() {
         if let PickingEvent::Clicked(e) = event {
-            for (mut node, entity) in node_entitys.iter_mut() {
+            for (tile, _, entity) in tile_entitys.iter() {
                 if entity == *e {
                     match selection_state.current {
                         None => {
-                            if board.owner(node.index) == board.current_player() {
-                                selection_state.current = Some((node.index, entity));
-                                node.selected = true;
+                            if board.owner(tile.index) == board.current_player() {
+                                selection_state.current = Some(tile.index);
+                                board_render_data.selected = Some(tile.index);
                             }
                         }
-                        Some((first, first_entity)) => {
-                            if first == node.index {
+                        Some(first) => {
+                            if first == tile.index {
                                 selection_state.current = None;
-                                to_deselect.push(first_entity);
+                                board_render_data.selected = None;
                                 continue;
                             }
 
-                            let second = node.index;
+                            let second = tile.index;
                             if board.available_moves(first).contains(&second) {
                                 board.make_move(first, second);
 
                                 selection_state.current = None;
-                                to_deselect.push(first_entity);
+                                board_render_data.selected = None;
                             }
                         }
                     }
                 }
             }
         }
-        // if let PickingEvent::Hover(e) = event {
-        //     let entity = match e {
-        //         HoverEvent::JustEntered(e) => e,
-        //         HoverEvent::JustLeft(e) => e,
-        //     };
-        //     for (mut node, node_entity) in node_entitys.iter_mut() {
-        //         if node_entity == *entity {
-        //             match e {
-        //                 HoverEvent::JustEntered(_) => {
-        //                     node.hovered = true;
-        //                 }
-        //                 HoverEvent::JustLeft(_) => {
-        //                     node.hovered = false;
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        for (mut node, _) in node_entitys.iter_mut() {
-            node.hovered = false;
-        }
-        if let Some((first, first_entity)) = selection_state.current {
-            for (mut node, entity) in node_entitys.iter_mut() {
-                if entity == first_entity {
-                    continue;
-                }
-                if board.available_moves(first).contains(&node.index) {
-                    node.hovered = true;
-                }
-            }
-        }
     }
 
-    for (mut node, node_entity) in node_entitys.iter_mut() {
-        if to_deselect.contains(&node_entity) {
-            node.selected = false;
+    for (tile, interaction, _) in tile_entitys.iter() {
+        if let Interaction::Hovered = interaction {
+            board_render_data.hovered = Some(tile.index);
         }
     }
 
