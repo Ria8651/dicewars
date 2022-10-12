@@ -53,7 +53,7 @@ impl Board {
             let r = rng.gen_range(-10..10);
             let hex = Hex::new(q, r, -q - r);
             map.insert(hex, i);
-            positions.push(hex.to_grid() * scale());
+            positions.push(hex.to_grid() * SCALE);
         }
 
         // spread territories
@@ -86,8 +86,8 @@ impl Board {
         let mut tiles = Vec::new();
         for (hex, territory_index) in map.iter() {
             // add node data
-            let transform = Transform::from_translation((hex.to_grid() * scale()).extend(0.0))
-                .with_scale(scale().extend(1.0));
+            let transform = Transform::from_translation((hex.to_grid() * SCALE).extend(0.0))
+                .with_scale(SCALE.extend(1.0));
 
             // add edge data
             let mut edges = Vec::new();
@@ -124,6 +124,8 @@ impl Board {
         (board, tiles, positions)
     }
 
+    /// note: this funciton assumes that the move is valid, [Board::available_moves] should be used to check
+    /// if the move is valid first.
     pub fn make_move(&mut self, first: usize, second: usize) {
         let mut rng = rand::thread_rng();
 
@@ -230,9 +232,7 @@ impl Board {
 }
 
 // this squishes the board verticly to make it look like it has perspective
-const fn scale() -> Vec2 {
-    Vec2::new(10.0, 7.5)
-}
+const SCALE: Vec2 = Vec2::new(10.0, 7.5);
 
 #[derive(Component)]
 pub struct Tile {
@@ -378,8 +378,22 @@ fn update_board(
         let owner = board.territories[i].owner;
 
         for j in 0..dice_count {
+            let loop_height = 4;
+            let offset = Vec3::new(
+                -14.0,
+                7.0 - loop_height as f32 * 14.0,
+                -(loop_height as f32 + 1.0) / 1000.0,
+            );
+
+            let mut dice_pos = Vec3::Y * j as f32 * 14.0 + pos.extend((loop_height + j) as f32 / 1000.0 + 1.0);
+            if j >= loop_height {
+                dice_pos += offset;
+            }
+
+            dice_pos.z += -pos.y + 100.0;
+
             let transform = Transform::default()
-                .with_translation(pos.extend(j as f32 + 1.0) + Vec3::new(0.0, j as f32 * 15.0, 0.0))
+                .with_translation(dice_pos)
                 .with_scale(Vec3::splat(45.0));
 
             commands
