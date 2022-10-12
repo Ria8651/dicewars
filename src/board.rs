@@ -49,8 +49,8 @@ impl Board {
                 connections: Vec::new(),
             });
 
-            let q = rng.gen_range(-10..10);
-            let r = rng.gen_range(-10..10);
+            let q = rng.gen_range(-15..15);
+            let r = rng.gen_range(-15..15);
             let hex = Hex::new(q, r, -q - r);
             map.insert(hex, i);
             positions.push(hex.to_grid() * SCALE);
