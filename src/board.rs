@@ -13,6 +13,7 @@ pub struct BoardPlugin;
 impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(bevy_obj::ObjPlugin)
+            .add_event::<RegenerateBoardEvent>()
             .add_startup_system(setup)
             .add_stage_after(CoreStage::Update, "Post", SystemStage::parallel())
             .add_system_to_stage("Post", update_board);
@@ -34,7 +35,7 @@ struct Territory {
 }
 
 impl Board {
-    pub fn generate() -> (Self, Vec<(Transform, Tile)>, Vec<Transform>, Vec<Vec2>) {
+    pub fn generate(players: usize) -> (Self, Vec<(Transform, Tile, Vec<Transform>)>, Vec<Vec2>) {
         let mut rng = rand::thread_rng();
         let mut map = HashMap::new();
         let mut territories = Vec::new();
@@ -43,8 +44,8 @@ impl Board {
         // generate territories
         for i in 0..16 {
             territories.push(Territory {
-                owner: rng.gen_range(0..2),
-                dice: rng.gen_range(1..5),
+                owner: rng.gen_range(0..players),
+                dice: rng.gen_range(1..7),
                 connections: Vec::new(),
             });
 
@@ -52,7 +53,7 @@ impl Board {
             let r = rng.gen_range(-10..10);
             let hex = Hex::new(q, r, -q - r);
             map.insert(hex, i);
-            positions.push(hex.to_grid() * 10.0);
+            positions.push(hex.to_grid() * scale());
         }
 
         // spread territories
@@ -83,34 +84,32 @@ impl Board {
 
         // generate render data
         let mut tiles = Vec::new();
-        let mut edges = Vec::new();
         for (hex, territory_index) in map.iter() {
             // add node data
-            let transform = Transform::from_translation(hex.to_grid().extend(0.0) * 10.0)
-                .with_scale(Vec3::splat(10.0));
+            let transform = Transform::from_translation((hex.to_grid() * scale()).extend(0.0))
+                .with_scale(scale().extend(1.0));
+
+            // add edge data
+            let mut edges = Vec::new();
+            for direction in Hex::orthogonal() {
+                let neighbor = *hex + direction;
+                let neighbor_index = map.get(&neighbor).unwrap_or(&usize::MAX);
+                if territory_index != neighbor_index {
+                    let center = hex.to_grid();
+                    let neighbor = neighbor.to_grid();
+                    let transform = Transform::from_xyz(0.0, 0.0, 0.5)
+                        .looking_at(-Vec3::Z, (neighbor - center).extend(0.0));
+                    edges.push(transform);
+                }
+            }
+
             tiles.push((
                 transform,
                 Tile {
                     index: *territory_index,
                 },
+                edges,
             ));
-
-            // add edge data
-            for direction in Hex::orthogonal() {
-                let neighbor = *hex + direction;
-                let neighbor_index = map.get(&neighbor).unwrap_or(&usize::MAX);
-                if territory_index != neighbor_index {
-                    let center = hex.to_grid() * 10.0;
-                    let neighbor = neighbor.to_grid() * 10.0;
-                    let transform = Transform::from_translation(center.extend(0.5))
-                        .looking_at(
-                            center.extend(0.5) - Vec3::Z,
-                            (neighbor - center).extend(0.0),
-                        )
-                        .with_scale(Vec3::splat(10.0));
-                    edges.push(transform);
-                }
-            }
         }
 
         let board = Self {
@@ -119,7 +118,7 @@ impl Board {
             territories,
         };
 
-        (board, tiles, edges, positions)
+        (board, tiles, positions)
     }
 
     pub fn make_move(&mut self, first: usize, second: usize) {
@@ -227,10 +226,18 @@ impl Board {
     }
 }
 
+// this squishes the board verticly to make it look like it has perspective
+const fn scale() -> Vec2 {
+    Vec2::new(10.0, 7.5)
+}
+
 #[derive(Component)]
 pub struct Tile {
     pub index: usize,
 }
+
+#[derive(Component)]
+struct Edge;
 
 #[derive(Component)]
 struct Dice;
@@ -246,15 +253,19 @@ pub struct BoardRenderData {
         Handle<ColorMaterial>,
         Handle<ColorMaterial>,
     )>,
+    edge_material: Handle<ColorMaterial>,
     selected_material: Handle<ColorMaterial>,
     selected_material_hover: Handle<ColorMaterial>,
 }
+
+pub struct RegenerateBoardEvent;
 
 fn setup(
     mut commands: Commands,
     mut mesh_assets: ResMut<Assets<Mesh>>,
     mut material_assets: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
+    mut regenerate_board_event: EventWriter<RegenerateBoardEvent>,
 ) {
     // spawn in tiles
     let colours = vec![
@@ -287,45 +298,27 @@ fn setup(
         ));
     }
 
-    let (board, tiles, edges, positions) = Board::generate();
-    for (transform, tile) in tiles {
-        let owner = board.territories[tile.index].owner;
-        commands
-            .spawn_bundle(MaterialMesh2dBundle {
-                transform,
-                mesh: meshes.1.clone().into(),
-                material: materials[owner].0.clone(),
-                ..default()
-            })
-            .insert_bundle((
-                tile,
-                PickableMesh::default(),
-                Hover::default(),
-                FocusPolicy::Block,
-                Interaction::None,
-            ));
-    }
-    for transform in edges {
-        commands.spawn_bundle(MaterialMesh2dBundle {
-            transform,
-            mesh: meshes.2.clone().into(),
-            material: material_assets.add(Color::rgb_u8(0, 0, 0).into()),
-            ..default()
-        });
-    }
-
+    let edge_material = material_assets.add(ColorMaterial::from(Color::rgb_u8(0, 0, 0)));
     let selected_material = material_assets.add(ColorMaterial::from(Color::rgb_u8(240, 240, 240)));
     let selected_material_hover =
         material_assets.add(ColorMaterial::from(Color::rgb_u8(255, 255, 255)));
 
-    commands.insert_resource(board);
+    regenerate_board_event.send(RegenerateBoardEvent);
+
+    // add empty board so it doesn't crash
+    commands.insert_resource(Board {
+        turn: 0,
+        player_order: Vec::new(),
+        territories: Vec::new(),
+    });
     commands.insert_resource(BoardRenderData {
-        positions,
+        positions: Vec::new(),
         colours,
         selected: None,
         hovered: None,
         meshes,
         materials,
+        edge_material,
         selected_material,
         selected_material_hover,
     });
@@ -333,10 +326,13 @@ fn setup(
 
 fn update_board(
     mut commands: Commands,
-    board: Res<Board>,
-    board_render_data: Res<BoardRenderData>,
+    mut board: ResMut<Board>,
+    mut board_render_data: ResMut<BoardRenderData>,
     dice_query: Query<Entity, With<Dice>>,
     mut tile_query: Query<(&Tile, &mut Handle<ColorMaterial>)>,
+    tile_entity_query: Query<Entity, With<Tile>>,
+    edge_entity_query: Query<Entity, With<Edge>>,
+    mut regenerate_board_event: EventReader<RegenerateBoardEvent>,
 ) {
     for (tile, mut material) in tile_query.iter_mut() {
         if tile.index == board_render_data.selected.unwrap_or(usize::MAX) {
@@ -379,5 +375,50 @@ fn update_board(
                 })
                 .insert(Dice);
         }
+    }
+
+    for _ in regenerate_board_event.iter() {
+        // delete old board
+        for tile in tile_entity_query.iter() {
+            commands.entity(tile).despawn();
+        }
+        for edge in edge_entity_query.iter() {
+            commands.entity(edge).despawn();
+        }
+
+        // generate new board
+        let (new_board, tiles, positions) = Board::generate(2);
+        for (transform, tile, edges) in tiles {
+            let owner = new_board.territories[tile.index].owner;
+            commands
+                .spawn_bundle(MaterialMesh2dBundle {
+                    transform,
+                    mesh: board_render_data.meshes.1.clone().into(),
+                    material: board_render_data.materials[owner].0.clone(),
+                    ..default()
+                })
+                .insert_bundle((
+                    tile,
+                    PickableMesh::default(),
+                    Hover::default(),
+                    FocusPolicy::Block,
+                    Interaction::None,
+                ))
+                .with_children(|parent| {
+                    for transform in edges {
+                        parent
+                            .spawn_bundle(MaterialMesh2dBundle {
+                                transform,
+                                mesh: board_render_data.meshes.2.clone().into(),
+                                material: board_render_data.edge_material.clone(),
+                                ..default()
+                            })
+                            .insert(Edge);
+                    }
+                });
+        }
+
+        board_render_data.positions = positions;
+        *board = new_board;
     }
 }
