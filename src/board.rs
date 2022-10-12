@@ -112,9 +112,12 @@ impl Board {
             ));
         }
 
+        let mut player_order = (0..players).collect::<Vec<_>>();
+        player_order.shuffle(&mut rng);
+
         let board = Self {
             turn: 0,
-            player_order: vec![0, 1],
+            player_order,
             territories,
         };
 
@@ -149,7 +152,7 @@ impl Board {
     pub fn available_moves(&self, first: usize) -> Vec<usize> {
         let mut moves = Vec::new();
         if self.territories[first].owner == self.player_order[self.turn]
-            && self.territories[first].dice > 0
+            && self.territories[first].dice > 1
         {
             for second in self.territories[first].connections.iter() {
                 if self.territories[first].owner != self.territories[*second].owner {
@@ -247,8 +250,12 @@ pub struct BoardRenderData {
     pub colours: Vec<Color>,
     pub selected: Option<usize>,
     pub hovered: Option<usize>,
+    pub attackable: Vec<usize>,
+    // quad, hexagon, edge
     meshes: (Handle<Mesh>, Handle<Mesh>, Handle<Mesh>),
+    // territory normal, territory hovered, territory attackable, dice material
     materials: Vec<(
+        Handle<ColorMaterial>,
         Handle<ColorMaterial>,
         Handle<ColorMaterial>,
         Handle<ColorMaterial>,
@@ -291,6 +298,7 @@ fn setup(
         materials.push((
             material_assets.add(ColorMaterial::from(colours[i])),
             material_assets.add(ColorMaterial::from(colours[i] * 0.8)),
+            material_assets.add(ColorMaterial::from(colours[i] * 0.9)),
             material_assets.add(ColorMaterial {
                 color: colours[i],
                 texture: Some(dice_texture.clone()),
@@ -316,6 +324,7 @@ fn setup(
         colours,
         selected: None,
         hovered: None,
+        attackable: Vec::new(),
         meshes,
         materials,
         edge_material,
@@ -334,6 +343,7 @@ fn update_board(
     edge_entity_query: Query<Entity, With<Edge>>,
     mut regenerate_board_event: EventReader<RegenerateBoardEvent>,
 ) {
+    // update material handles
     for (tile, mut material) in tile_query.iter_mut() {
         if tile.index == board_render_data.selected.unwrap_or(usize::MAX) {
             if tile.index == board_render_data.hovered.unwrap_or(usize::MAX) {
@@ -346,12 +356,18 @@ fn update_board(
                 let owner = board.territories[tile.index].owner;
                 *material = board_render_data.materials[owner].1.clone();
             } else {
-                let owner = board.territories[tile.index].owner;
-                *material = board_render_data.materials[owner].0.clone();
+                if board_render_data.attackable.contains(&tile.index) {
+                    let owner = board.territories[tile.index].owner;
+                    *material = board_render_data.materials[owner].2.clone();
+                } else {
+                    let owner = board.territories[tile.index].owner;
+                    *material = board_render_data.materials[owner].0.clone();
+                }
             }
         }
     }
 
+    // update dice
     for dice in dice_query.iter() {
         commands.entity(dice).despawn();
     }
@@ -370,13 +386,14 @@ fn update_board(
                 .spawn_bundle(MaterialMesh2dBundle {
                     transform,
                     mesh: board_render_data.meshes.0.clone().into(),
-                    material: board_render_data.materials[owner].2.clone(),
+                    material: board_render_data.materials[owner].3.clone(),
                     ..default()
                 })
                 .insert(Dice);
         }
     }
 
+    // generate new board
     for _ in regenerate_board_event.iter() {
         // delete old board
         for tile in tile_entity_query.iter() {
@@ -387,7 +404,7 @@ fn update_board(
         }
 
         // generate new board
-        let (new_board, tiles, positions) = Board::generate(2);
+        let (new_board, tiles, positions) = Board::generate(8);
         for (transform, tile, edges) in tiles {
             let owner = new_board.territories[tile.index].owner;
             commands

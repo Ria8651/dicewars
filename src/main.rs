@@ -16,6 +16,7 @@ fn main() {
         .add_plugins(DefaultPickingPlugins)
         .add_event::<GameStateEvent>()
         .insert_resource(SelectionState { current: None })
+        .insert_resource(ClearColor(Color::rgb_u8(255, 255, 255)))
         .add_startup_system(setup)
         .add_system(process_game)
         .run();
@@ -50,14 +51,19 @@ fn process_game(
                     match selection_state.current {
                         None => {
                             if board.owner(tile.index) == board.current_player() {
-                                selection_state.current = Some(tile.index);
-                                board_render_data.selected = Some(tile.index);
+                                let available_moves = board.available_moves(tile.index);
+                                if available_moves.len() > 0 {
+                                    selection_state.current = Some(tile.index);
+                                    board_render_data.selected = Some(tile.index);
+                                    board_render_data.attackable = available_moves;
+                                }
                             }
                         }
                         Some(first) => {
                             if first == tile.index {
                                 selection_state.current = None;
                                 board_render_data.selected = None;
+                                board_render_data.attackable = Vec::new();
                                 continue;
                             }
 
@@ -67,6 +73,7 @@ fn process_game(
 
                                 selection_state.current = None;
                                 board_render_data.selected = None;
+                                board_render_data.attackable = Vec::new();
                             }
                         }
                     }
