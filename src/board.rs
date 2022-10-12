@@ -174,20 +174,32 @@ impl Board {
     }
 
     pub fn finish_turn(&mut self) {
+        let mut rng = rand::thread_rng();
         let scores = self.scores().1;
         let (player, score) = scores[self.turn];
 
         let mut player_teritories = Vec::new();
         for territory in self.territories.iter_mut() {
-            if territory.owner == player {
+            if territory.owner == player && territory.dice < 8 {
                 player_teritories.push(territory);
             }
         }
         for _ in 0..score {
-            player_teritories
-                .choose_mut(&mut rand::thread_rng())
-                .unwrap()
-                .dice += 1;
+            loop {
+                if player_teritories.len() > 0 {
+                    let index = rng.gen_range(0..player_teritories.len());
+                    let territory = &mut player_teritories[index];
+                    if territory.dice < 8 {
+                        territory.dice += 1;
+                        break;
+                    } else {
+                        player_teritories.remove(index);
+                    }
+                } else {
+                    // add extra dice to player's bonus
+                    break;
+                }
+            }
         }
 
         let territory_counts = self.count_territories();
@@ -385,12 +397,13 @@ fn update_board(
                 -(loop_height as f32 + 1.0) / 1000.0,
             );
 
-            let mut dice_pos = Vec3::Y * j as f32 * 14.0 + pos.extend((loop_height + j) as f32 / 1000.0 + 1.0);
+            let mut dice_pos =
+                Vec3::Y * j as f32 * 14.0 + pos.extend((loop_height + j) as f32 / 1000.0 + 1.0);
             if j >= loop_height {
                 dice_pos += offset;
             }
 
-            dice_pos.z += -pos.y + 100.0;
+            dice_pos.z += -pos.y + 500.0;
 
             let transform = Transform::default()
                 .with_translation(dice_pos)
