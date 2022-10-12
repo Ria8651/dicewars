@@ -75,10 +75,16 @@ fn process_game(
         }
     }
 
+    let mut changed = false;
     for (tile, interaction, _) in tile_entitys.iter() {
         if let Interaction::Hovered = interaction {
             board_render_data.hovered = Some(tile.index);
+            changed = true;
+            break;
         }
+    }
+    if !changed {
+        board_render_data.hovered = None;
     }
 
     for game_state_event in game_state_events.iter() {
