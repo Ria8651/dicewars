@@ -42,7 +42,7 @@ impl Board {
         let mut positions = Vec::new();
 
         // generate territories
-        for i in 0..16 {
+        for i in 0..20 {
             territories.push(Territory {
                 owner: rng.gen_range(0..players),
                 dice: rng.gen_range(1..7),
@@ -384,10 +384,27 @@ fn update_board(
         commands.entity(dice).despawn();
     }
 
-    for i in 0..board.territories.len() {
-        let dice_count = board.territories[i].dice;
-        let pos = board_render_data.positions[i];
-        let owner = board.territories[i].owner;
+    let len = if board_render_data.hovered.is_some() {
+        board.territories.len() + 1
+    } else {
+        board.territories.len()
+    };
+    for i in 0..len {
+        let dice_count = if i == board.territories.len() {
+            board.territories[board_render_data.hovered.unwrap()].dice
+        } else {
+            board.territories[i].dice
+        };
+        let pos = if i == board.territories.len() {
+            Vec2::new(500.0, -200.0)
+        } else {
+            board_render_data.positions[i]
+        };
+        let owner = if i == board.territories.len() {
+            board.territories[board_render_data.hovered.unwrap()].owner
+        } else {
+            board.territories[i].owner
+        };
 
         for j in 0..dice_count {
             let loop_height = 4;
@@ -431,7 +448,7 @@ fn update_board(
         }
 
         // generate new board
-        let (new_board, tiles, positions) = Board::generate(8);
+        let (new_board, tiles, positions) = Board::generate(2);
         for (transform, tile, edges) in tiles {
             let owner = new_board.territories[tile.index].owner;
             commands
