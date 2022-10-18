@@ -39,48 +39,103 @@ impl Board {
         let mut rng = rand::thread_rng();
         let mut map = HashMap::new();
         let mut territories = Vec::new();
+        let mut territory_tiles = Vec::new();
         let mut positions = Vec::new();
 
-        // generate territories
-        for i in 0..20 {
-            territories.push(Territory {
-                owner: rng.gen_range(0..players),
-                dice: rng.gen_range(1..7),
-                connections: Vec::new(),
-            });
+        let territory_size = 20;
 
-            let q = rng.gen_range(-15..15);
-            let r = rng.gen_range(-15..15);
-            let hex = Hex::new(q, r, -q - r);
-            map.insert(hex, i);
-            positions.push(hex.to_grid() * SCALE);
-        }
+        positions.push(Vec2::new(0.0, 0.0));
+        territories.push(Territory {
+            owner: 0,
+            dice: 5,
+            connections: Vec::new(),
+        });
+        territory_tiles.push(vec![Hex::new(0, 0, 0)]);
+        map.insert(Hex::new(0, 0, 0), 0);
 
-        // spread territories
-        for _ in 0..4 {
-            for (hex, territory) in map.clone().iter() {
-                for direction in Hex::orthogonal() {
-                    let neighbor = *hex + direction;
+        fn generate_options(
+            i: usize,
+            territory_tiles: &mut Vec<Vec<Hex>>,
+            map: &mut HashMap<Hex, usize>,
+        ) -> Vec<Hex> {
+            let mut options = Vec::new();
+            for tile in territory_tiles[i].iter() {
+                for neighbor in Hex::orthogonal() {
+                    let neighbor = *tile + neighbor;
                     if !map.contains_key(&neighbor) {
-                        map.insert(neighbor, *territory);
+                        options.push(neighbor);
                     }
                 }
+            }
+            options
+        }
+
+        for i in 0..50 {
+            for _ in 0..territory_size {
+                let options = generate_options(i, &mut territory_tiles, &mut map);
+                if let Some(tile) = options.choose(&mut rng) {
+                    territory_tiles[i].push(*tile);
+                    map.insert(*tile, i);
+                } else {
+                    break;
+                }
+            }
+
+            let options = generate_options(i, &mut territory_tiles, &mut map);
+            if let Some(tile) = options.choose(&mut rng) {
+                territories.push(Territory {
+                    owner: 0,
+                    dice: 5,
+                    connections: Vec::new(),
+                });
+                territory_tiles.push(vec![*tile]);
+                positions.push(tile.to_grid() * SCALE);
+                map.insert(*tile, i + 1);
+            } else {
+                break;
             }
         }
 
-        // generate connections
-        for (hex, territory) in map.iter() {
-            for direction in Hex::orthogonal() {
-                let neighbor = *hex + direction;
-                if map.contains_key(&neighbor) {
-                    let territory = territories.get_mut(*territory).unwrap();
-                    let neighbor = map.get(&neighbor).unwrap();
-                    if !territory.connections.contains(neighbor) {
-                        territory.connections.push(*neighbor);
-                    }
-                }
-            }
-        }
+        // // generate territories
+        // for i in 0..20 {
+        //     territories.push(Territory {
+        //         owner: rng.gen_range(0..players),
+        //         dice: rng.gen_range(1..7),
+        //         connections: Vec::new(),
+        //     });
+
+        //     let q = rng.gen_range(-15..15);
+        //     let r = rng.gen_range(-15..15);
+        //     let hex = Hex::new(q, r, -q - r);
+        //     map.insert(hex, i);
+        //     positions.push(hex.to_grid() * SCALE);
+        // }
+
+        // // spread territories
+        // for _ in 0..4 {
+        //     for (hex, territory) in map.clone().iter() {
+        //         for direction in Hex::orthogonal() {
+        //             let neighbor = *hex + direction;
+        //             if !map.contains_key(&neighbor) {
+        //                 map.insert(neighbor, *territory);
+        //             }
+        //         }
+        //     }
+        // }
+
+        // // generate connections
+        // for (hex, territory) in map.iter() {
+        //     for direction in Hex::orthogonal() {
+        //         let neighbor = *hex + direction;
+        //         if map.contains_key(&neighbor) {
+        //             let territory = territories.get_mut(*territory).unwrap();
+        //             let neighbor = map.get(&neighbor).unwrap();
+        //             if !territory.connections.contains(neighbor) {
+        //                 territory.connections.push(*neighbor);
+        //             }
+        //         }
+        //     }
+        // }
 
         // generate render data
         let mut tiles = Vec::new();

@@ -1,6 +1,7 @@
 use bevy::prelude::*;
+use std::iter::Extend;
 
-#[derive(Hash, Eq, PartialEq, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 pub struct Hex {
     pub q: i32,
     pub r: i32,
@@ -44,8 +45,8 @@ impl std::ops::Add for Hex {
     }
 }
 
-#[derive(Component)]
-pub struct TmpMapTile;
+// #[derive(Component)]
+// pub struct TmpMapTile;
 
 // fn map_setup(mut map_generation: ResMut<MapGeneration>) {
 //     use rand::Rng;
