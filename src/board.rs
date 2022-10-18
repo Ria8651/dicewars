@@ -42,100 +42,141 @@ impl Board {
         let mut territory_tiles = Vec::new();
         let mut positions = Vec::new();
 
-        let territory_size = 20;
-
-        positions.push(Vec2::new(0.0, 0.0));
-        territories.push(Territory {
-            owner: 0,
-            dice: 5,
-            connections: Vec::new(),
-        });
-        territory_tiles.push(vec![Hex::new(0, 0, 0)]);
-        map.insert(Hex::new(0, 0, 0), 0);
-
+        // helper function
         fn generate_options(
             i: usize,
             territory_tiles: &mut Vec<Vec<Hex>>,
             map: &mut HashMap<Hex, usize>,
         ) -> Vec<Hex> {
             let mut options = Vec::new();
-            for tile in territory_tiles[i].iter() {
-                for neighbor in Hex::orthogonal() {
-                    let neighbor = *tile + neighbor;
-                    if !map.contains_key(&neighbor) {
-                        options.push(neighbor);
+            let outer;
+            if i == usize::MAX {
+                outer = territory_tiles.iter();
+            } else {
+                outer = territory_tiles[i..=i].iter();
+            }
+
+            for territory in outer {
+                for tile in territory.iter() {
+                    for neighbor in Hex::orthogonal() {
+                        let neighbor = *tile + neighbor;
+                        if !map.contains_key(&neighbor) {
+                            options.push(neighbor);
+                        }
                     }
                 }
             }
             options
         }
 
-        for i in 0..50 {
+        // main terrain gen loop
+        let num_territories = 25;
+        let territory_size = 10;
+        let mut i = 0;
+        'outer: while i < num_territories {
+            // create new territory
+            let options = if i == 0 {
+                vec![Hex::new(0, 0, 0)]
+            } else {
+                generate_options(usize::MAX, &mut territory_tiles, &mut map)
+            };
+
+            if let Some(tile) = options.choose(&mut rng) {
+                territories.push(Territory {
+                    owner: 0,
+                    dice: 1,
+                    connections: Vec::new(),
+                });
+                territory_tiles.push(vec![*tile]);
+                map.insert(*tile, i);
+            } else {
+                break;
+            }
+
+            // expand territory one tile at a time
             for _ in 0..territory_size {
                 let options = generate_options(i, &mut territory_tiles, &mut map);
                 if let Some(tile) = options.choose(&mut rng) {
                     territory_tiles[i].push(*tile);
                     map.insert(*tile, i);
                 } else {
-                    break;
+                    // discard if territory can no longer expand
+                    while let Some(tile) = territory_tiles[i].pop() {
+                        map.remove(&tile);
+                    }
+                    let _ = territories.pop();
+                    let _ = territory_tiles.pop();
+
+                    continue 'outer;
                 }
             }
 
+            // expand whole territory
             let options = generate_options(i, &mut territory_tiles, &mut map);
-            if let Some(tile) = options.choose(&mut rng) {
-                territories.push(Territory {
-                    owner: 0,
-                    dice: 5,
-                    connections: Vec::new(),
-                });
-                territory_tiles.push(vec![*tile]);
-                positions.push(tile.to_grid() * SCALE);
-                map.insert(*tile, i + 1);
-            } else {
-                break;
+            for tile in options {
+                territory_tiles[i].push(tile);
+                map.insert(tile, i);
+            }
+
+            i += 1;
+        }
+
+        // generate connections
+        for (hex, territory) in map.iter() {
+            for direction in Hex::orthogonal() {
+                let neighbor = *hex + direction;
+                if map.contains_key(&neighbor) {
+                    let territory = territories.get_mut(*territory).unwrap();
+                    let neighbor = map.get(&neighbor).unwrap();
+                    if !territory.connections.contains(neighbor) {
+                        territory.connections.push(*neighbor);
+                    }
+                }
             }
         }
 
-        // // generate territories
-        // for i in 0..20 {
-        //     territories.push(Territory {
-        //         owner: rng.gen_range(0..players),
-        //         dice: rng.gen_range(1..7),
-        //         connections: Vec::new(),
-        //     });
+        // generate positions
+        for territory in territory_tiles.iter() {
+            let mut position = Vec2::new(0.0, 0.0);
+            for tile in territory {
+                position += tile.to_grid() * SCALE;
+            }
+            positions.push(position / (territory.len() as f32));
+        }
 
-        //     let q = rng.gen_range(-15..15);
-        //     let r = rng.gen_range(-15..15);
-        //     let hex = Hex::new(q, r, -q - r);
-        //     map.insert(hex, i);
-        //     positions.push(hex.to_grid() * SCALE);
-        // }
+        // distribue territoryes between players
+        let mut territorys_left = (0..territories.len()).collect::<Vec<_>>();
+        let mut player_territorys = vec![Vec::new(); players];
+        'outer2: loop {
+            for i in 0..players {
+                let index = rng.gen_range(0..territorys_left.len());
+                let territory = territorys_left.remove(index);
+                territories[territory].owner = i;
+                player_territorys[i].push(territory);
 
-        // // spread territories
-        // for _ in 0..4 {
-        //     for (hex, territory) in map.clone().iter() {
-        //         for direction in Hex::orthogonal() {
-        //             let neighbor = *hex + direction;
-        //             if !map.contains_key(&neighbor) {
-        //                 map.insert(neighbor, *territory);
-        //             }
-        //         }
-        //     }
-        // }
+                if territorys_left.is_empty() {
+                    break 'outer2;
+                }
+            }
+        }
 
-        // // generate connections
-        // for (hex, territory) in map.iter() {
-        //     for direction in Hex::orthogonal() {
-        //         let neighbor = *hex + direction;
-        //         if map.contains_key(&neighbor) {
-        //             let territory = territories.get_mut(*territory).unwrap();
-        //             let neighbor = map.get(&neighbor).unwrap();
-        //             if !territory.connections.contains(neighbor) {
-        //                 territory.connections.push(*neighbor);
-        //             }
-        //         }
-        //     }
-        // }
+        // distribute dice to territories
+        let average_dice_per_territory = 3;
+        let total_dice = (average_dice_per_territory - 1) * territories.len();
+        let dice_per_player = total_dice / players;
+
+        for i in 0..players {
+            let mut dice_left = dice_per_player;
+            while dice_left > 0 {
+                let index = rng.gen_range(0..player_territorys[i].len());
+                let territory = player_territorys[i][index];
+                let territory = territories.get_mut(territory).unwrap();
+                if territory.dice < 8 {
+                    territory.dice += 1;
+                    dice_left -= 1;
+                }
+            }
+        }
 
         // generate render data
         let mut tiles = Vec::new();
@@ -167,6 +208,7 @@ impl Board {
             ));
         }
 
+        // random player order
         let mut player_order = (0..players).collect::<Vec<_>>();
         player_order.shuffle(&mut rng);
 
@@ -503,7 +545,7 @@ fn update_board(
         }
 
         // generate new board
-        let (new_board, tiles, positions) = Board::generate(2);
+        let (new_board, tiles, positions) = Board::generate(3);
         for (transform, tile, edges) in tiles {
             let owner = new_board.territories[tile.index].owner;
             commands
