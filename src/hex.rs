@@ -9,6 +9,8 @@ pub struct Hex {
 }
 
 impl Hex {
+    pub const ZERO: Hex = Hex::new(0, 0, 0);
+
     pub const fn new(q: i32, r: i32, s: i32) -> Self {
         Self { q, r, s }
     }
@@ -19,6 +21,14 @@ impl Hex {
         let y = (3.0 / 2.0) * self.r as f32;
 
         return Vec2::new(x, y);
+    }
+
+    pub fn distance(&self, other: Self) -> i32 {
+        let d_q = (self.q - other.q).abs();
+        let d_r = (self.r - other.r).abs();
+        let d_s = (self.s - other.s).abs();
+
+        return (d_q + d_r + d_s) / 2;
     }
 
     pub const fn orthogonal() -> [Hex; 6] {

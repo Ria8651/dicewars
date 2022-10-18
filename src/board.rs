@@ -60,7 +60,7 @@ impl Board {
                 for tile in territory.iter() {
                     for neighbor in Hex::orthogonal() {
                         let neighbor = *tile + neighbor;
-                        if !map.contains_key(&neighbor) {
+                        if !map.contains_key(&neighbor) && neighbor.distance(Hex::ZERO) < 20 {
                             options.push(neighbor);
                         }
                     }
@@ -73,7 +73,7 @@ impl Board {
         let num_territories = 25;
         let territory_size = 10;
         let mut i = 0;
-        'outer: while i < num_territories {
+        'outer: for _ in 0..num_territories {
             // create new territory
             let options = if i == 0 {
                 vec![Hex::new(0, 0, 0)]
@@ -341,7 +341,7 @@ impl Board {
 }
 
 // this squishes the board verticly to make it look like it has perspective
-const SCALE: Vec2 = Vec2::new(10.0, 7.5);
+const SCALE: Vec2 = Vec2::new(12.0, 9.0);
 
 #[derive(Component)]
 pub struct Tile {
@@ -481,38 +481,22 @@ fn update_board(
         commands.entity(dice).despawn();
     }
 
-    let len = if board_render_data.hovered.is_some() {
-        board.territories.len() + 1
-    } else {
-        board.territories.len()
-    };
-    for i in 0..len {
-        let dice_count = if i == board.territories.len() {
-            board.territories[board_render_data.hovered.unwrap()].dice
-        } else {
-            board.territories[i].dice
-        };
-        let pos = if i == board.territories.len() {
-            Vec2::new(500.0, -200.0)
-        } else {
-            board_render_data.positions[i]
-        };
-        let owner = if i == board.territories.len() {
-            board.territories[board_render_data.hovered.unwrap()].owner
-        } else {
-            board.territories[i].owner
-        };
+    let dice_size = 16.0;
+    for i in 0..board.territories.len() {
+        let dice_count = board.territories[i].dice;
+        let pos = board_render_data.positions[i];
+        let owner = board.territories[i].owner;
 
         for j in 0..dice_count {
             let loop_height = 4;
             let offset = Vec3::new(
-                -14.0,
-                7.0 - loop_height as f32 * 14.0,
+                -dice_size,
+                dice_size / 2.0 - loop_height as f32 * dice_size,
                 -(loop_height as f32 + 1.0) / 1000.0,
             );
 
-            let mut dice_pos =
-                Vec3::Y * j as f32 * 14.0 + pos.extend((loop_height + j) as f32 / 1000.0 + 1.0);
+            let mut dice_pos = Vec3::Y * j as f32 * dice_size
+                + pos.extend((loop_height + j) as f32 / 1000.0 + 1.0);
             if j >= loop_height {
                 dice_pos += offset;
             }
@@ -521,7 +505,7 @@ fn update_board(
 
             let transform = Transform::default()
                 .with_translation(dice_pos)
-                .with_scale(Vec3::splat(45.0));
+                .with_scale(Vec3::splat(dice_size * 3.0));
 
             commands
                 .spawn_bundle(MaterialMesh2dBundle {
