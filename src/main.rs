@@ -1,8 +1,10 @@
 use bevy::{prelude::*, ui::Interaction};
 use bevy_mod_picking::*;
-use board::{Board, BoardRenderData, Tile};
+use board::Board;
+use board_renderer::{BoardRenderData, Tile};
 
 mod board;
+mod board_renderer;
 mod fps_counter;
 mod hex;
 mod ui;
@@ -11,7 +13,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(ui::UiPlugin)
-        .add_plugin(board::BoardPlugin)
+        .add_plugin(board_renderer::BoardPlugin)
         .add_plugin(fps_counter::FpsCounter)
         .add_plugins(DefaultPickingPlugins)
         .add_event::<GameStateEvent>()

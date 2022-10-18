@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use std::iter::Extend;
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 pub struct Hex {

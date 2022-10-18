@@ -1,9 +1,13 @@
 use super::{
-    board::{Board, BoardRenderData, RegenerateBoardEvent},
+    board::{Board, BoardGenSettings},
+    board_renderer::{BoardRenderData, RegenerateBoardEvent},
     GameStateEvent,
 };
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContext, EguiPlugin};
+use bevy_egui::{
+    egui::{self, Slider},
+    EguiContext, EguiPlugin,
+};
 use egui::{Color32, RichText};
 
 pub struct UiPlugin;
@@ -20,6 +24,7 @@ fn ui_system(
     board_render_data: Res<BoardRenderData>,
     mut game_state_events: EventWriter<GameStateEvent>,
     mut regenerate_board_event: EventWriter<RegenerateBoardEvent>,
+    mut board_gen_settings: ResMut<BoardGenSettings>,
 ) {
     egui::Window::new("Game menu").show(egui_context.ctx_mut(), |ui| {
         if ui.button("New game").clicked() {
@@ -30,7 +35,7 @@ fn ui_system(
             game_state_events.send(GameStateEvent::FinishTurn);
         }
 
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
             let (turn, scores) = board.scores();
             for i in 0..scores.len() {
                 let colour = board_render_data.colours[scores[i].0];
@@ -48,5 +53,8 @@ fn ui_system(
                 );
             }
         });
+
+        ui.add(Slider::new(&mut board_gen_settings.player_count, 1..=8).text("Players"));
+        ui.add(Slider::new(&mut board_gen_settings.board_size, 7..=50).text("Board size"));
     });
 }
