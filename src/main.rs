@@ -10,8 +10,14 @@ mod hex;
 mod ui;
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
+    let mut app = App::new();
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        app.add_plugin(bevy_web_resizer::Plugin);
+    }
+
+    app.add_plugins(DefaultPlugins)
         .add_plugin(ui::UiPlugin)
         .add_plugin(board_renderer::BoardPlugin)
         .add_plugin(fps_counter::FpsCounter)

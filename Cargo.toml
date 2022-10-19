@@ -3,11 +3,14 @@ name = "dicewars"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# note: use these commands to build for web. you will need to add the assets folder and an index.html file for everything to work
+# cargo build --release --target wasm32-unknown-unknown
+# wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/release/bevy-snake.wasm
 
 [dependencies]
 bevy = "0.8"
 rand = "0.8"
 bevy_egui = "0.16"
 bevy_obj = "0.8"
-bevy_mod_picking = "0.9.0"
+bevy_mod_picking = "0.9"
+bevy-web-resizer = "3.0"
