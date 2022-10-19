@@ -1,4 +1,4 @@
-use bevy::{prelude::*, ui::Interaction};
+use bevy::{prelude::*, ui::Interaction, winit::WinitSettings};
 use bevy_mod_picking::*;
 use board::Board;
 use board_renderer::{BoardRenderData, Tile};
@@ -23,6 +23,15 @@ fn main() {
         .add_plugin(fps_counter::FpsCounter)
         .add_plugins(DefaultPickingPlugins)
         .add_event::<GameStateEvent>()
+        .insert_resource(WinitSettings {
+            focused_mode: bevy::winit::UpdateMode::ReactiveLowPower {
+                max_wait: std::time::Duration::from_secs(5),
+            },
+            unfocused_mode: bevy::winit::UpdateMode::ReactiveLowPower {
+                max_wait: std::time::Duration::from_secs(60),
+            },
+            ..Default::default()
+        })
         .insert_resource(SelectionState { current: None })
         .insert_resource(ClearColor(Color::rgb_u8(255, 255, 255)))
         .add_startup_system(setup)
